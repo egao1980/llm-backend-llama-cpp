@@ -43,7 +43,8 @@ jobs:
           # alone left ubuntu on a ~2GB heap and OOM'd the 1.7GB llama-cpp overlay.
           REAL_ROS="$(command -v ros)"
           mkdir -p "$HOME/.local/bin"
-          printf '%s\n' '#!/bin/bash' "exec \"$REAL_ROS\" --dynamic-space-size 16384 \"\$@\"" \
+          # ros(1): `dynamic-space-size=MB` is a ros option, not sbcl's flag.
+          printf '%s\n' '#!/bin/bash' "exec \"$REAL_ROS\" dynamic-space-size=16384 \"\$@\"" \
             > "$HOME/.local/bin/ros"
           chmod +x "$HOME/.local/bin/ros"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
