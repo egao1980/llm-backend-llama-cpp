@@ -36,6 +36,7 @@ jobs:
           roswell-version: ${{ env.ROSWELL_VERSION }}
 
       - name: SBCL heap for native overlays
+        if: ${{ !startsWith(matrix.os, 'macos') }}
         shell: bash
         run: |
           set -euo pipefail
