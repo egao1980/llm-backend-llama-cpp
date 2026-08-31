@@ -1,8 +1,8 @@
 (in-package #:llm-backend-llama-cpp)
 
 (defvar *complete-fn* #'llama-cpp:complete
-  "Injected for tests. (lambda (engine prompt &key max-tokens temperature)
-    → (values text prompt-tokens completion-tokens)).")
+  "Injected for tests. (lambda (engine prompt &key max-tokens temperature
+    grammar grammar-root) → (values text prompt-tokens completion-tokens)).")
 
 (defvar *embed-fn* #'llama-cpp:embed
   "Injected for tests. (lambda (engine texts) → (values vectors dim prompt-tokens)).")
@@ -57,6 +57,37 @@
 (defmethod backend-supports-p ((backend llama-cpp-backend) (feature (eql :responses)))
   nil)
 
+(defmethod backend-supports-p ((backend llama-cpp-backend) (feature (eql :grammar)))
+  t)
+
+(defmethod backend-supports-p ((backend llama-cpp-backend)
+                               (feature (eql :structured-output)))
+  t)
+
+(defun %extra-get (extra key)
+  (cond
+    ((null extra) nil)
+    ((hash-table-p extra)
+     (or (gethash key extra)
+         (gethash (string-downcase (string key)) extra)
+         (and (keywordp key) (gethash (symbol-name key) extra))))
+    ((consp extra) (getf extra key))
+    (t nil)))
+
+(defun %grammar-from-settings (settings)
+  "→ (values gbnf root). EXTRA :grammar wins over :output schema."
+  (let* ((extra (and settings (llm-settings-extra settings)))
+         (raw (%extra-get extra :grammar))
+         (root (or (%extra-get extra :grammar-root) "root"))
+         (output (and settings (llm-settings-output settings))))
+    (cond
+      ((and (stringp raw) (plusp (length raw)))
+       (values raw root))
+      (output
+       (values (json-schema-to-gbnf (structured-output-json-schema output))
+               root))
+      (t (values nil nil)))))
+
 (defun %prompt (turns)
   (let ((ts (coerce-turns turns)))
     (or (loop for turn in (reverse ts)
@@ -70,16 +101,20 @@
   (declare (ignore tools tool-choice output))
   (let* ((settings (coerce-settings settings))
          (engine (ensure-llama-cpp-engine backend)))
-    (multiple-value-bind (text pt ct)
-        (funcall *complete-fn* engine (%prompt turns)
+    (multiple-value-bind (grammar grammar-root)
+        (%grammar-from-settings settings)
+      (multiple-value-bind (text pt ct)
+          (apply *complete-fn* engine (%prompt turns)
                  :max-tokens (or (and settings (llm-settings-max-tokens settings)) 32)
-                 :temperature (or (and settings (llm-settings-temperature settings)) 0.0))
-      (make-llm-response
-       :parts (list (make-llm-text-part :text (or text "")))
-       :model (or model (backend-model backend))
-       :finish-reason :stop
-       :usage (make-llm-usage :input-tokens pt :output-tokens ct
-                              :total-tokens (and pt ct (+ pt ct)))))))
+                 :temperature (or (and settings (llm-settings-temperature settings)) 0.0)
+                 (and grammar
+                      (list :grammar grammar :grammar-root grammar-root)))
+        (make-llm-response
+         :parts (list (make-llm-text-part :text (or text "")))
+         :model (or model (backend-model backend))
+         :finish-reason :stop
+         :usage (make-llm-usage :input-tokens pt :output-tokens ct
+                                :total-tokens (and pt ct (+ pt ct))))))))
 
 (defmethod list-models ((backend llama-cpp-backend) &key)
   (list (make-llm-model-info

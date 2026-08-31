@@ -1,8 +1,8 @@
 (in-package #:llm-backend-llama-cpp/tests)
 
-(defun %fake-complete (engine prompt &key max-tokens temperature)
+(defun %fake-complete (engine prompt &key max-tokens temperature grammar grammar-root)
   (declare (ignore engine max-tokens temperature))
-  (values (format nil "ok:~a" prompt) 3 2))
+  (values (format nil "ok:~a~@[:~a~]~@[:~a~]" prompt grammar grammar-root) 3 2))
 
 (defun %fake-embed (engine texts)
   (declare (ignore engine))
@@ -66,4 +66,36 @@
 (deftest catalogue
   (let ((cat (make-llm-catalogue (%backend))))
     (ok (capability-protocol:capability-supported-p cat :llm-embeddings))
+    (ok (capability-protocol:capability-supported-p cat :llm-structured-output))
     (ok (not (capability-protocol:capability-supported-p cat :llm-tools)))))
+
+(deftest supports-grammar
+  (let ((b (%backend)))
+    (ok (backend-supports-p b :grammar))
+    (ok (backend-supports-p b :structured-output))))
+
+(deftest generate-raw-grammar
+  (%with-fake
+    (let* ((b (%backend))
+           (r (generate b "hi"
+                        :settings (llm-backend-llama-cpp:llama-cpp-settings
+                                   :grammar "root ::= \"x\""
+                                   :grammar-root "root"))))
+      (ok (equal "ok:hi:root ::= \"x\":root" (llm-response-text r))))))
+
+(deftest generate-output-schema-to-grammar
+  (%with-fake
+    (let* ((schema (%js "type" "object"
+                        "properties" (%js "name" (%js "type" "string"))
+                        "required" #("name")))
+           (r (generate (%backend) "city" :output schema)))
+      (ok (search "root ::=" (llm-response-text r)))
+      (ok (search "name" (llm-response-text r))))))
+
+(deftest extra-grammar-wins-over-output
+  (%with-fake
+    (let ((r (generate (%backend) "x"
+                       :output (%js "type" "string")
+                       :settings (llm-backend-llama-cpp:llama-cpp-settings
+                                  :grammar "root ::= \"z\""))))
+      (ok (equal "ok:x:root ::= \"z\":root" (llm-response-text r))))))

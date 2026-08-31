@@ -1,5 +1,5 @@
 (defsystem "llm-backend-llama-cpp"
-  :version "0.1.0"
+  :version "0.1.1"
   :description "llm-protocol backend over llama-cpp (ggml-org/llama.cpp)"
   :author "egao1980"
   :license "MIT"
@@ -10,6 +10,7 @@
   :serial t
   :pathname "src"
   :components ((:file "package")
+               (:file "grammar")
                (:file "backend"))
   :in-order-to ((test-op (test-op "llm-backend-llama-cpp/tests"))))
 
@@ -18,6 +19,7 @@
   :pathname "tests"
   :serial t
   :components ((:file "package")
+               (:file "grammar-test")
                (:file "backend-test"))
   :perform (test-op (o c)
              (unless (symbol-call :rove :run c)
