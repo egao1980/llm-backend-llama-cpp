@@ -1,8 +1,13 @@
 (in-package #:llm-backend-llama-cpp/tests)
 
-(defun %fake-complete (engine prompt &key max-tokens temperature grammar grammar-root)
+(defun %fake-complete (engine prompt &key max-tokens temperature grammar grammar-root
+                       on-token)
   (declare (ignore engine max-tokens temperature))
-  (values (format nil "ok:~a~@[:~a~]~@[:~a~]" prompt grammar grammar-root) 3 2))
+  (let ((text (format nil "ok:~a~@[:~a~]~@[:~a~]" prompt grammar grammar-root)))
+    (when on-token
+      (loop for i from 0 below (length text)
+            until (funcall on-token (string (char text i)))))
+    (values text 3 2)))
 
 (defun %fake-embed (engine texts)
   (declare (ignore engine))
@@ -64,15 +69,45 @@
                  'llm-unsupported))))
 
 (deftest catalogue
-  (let ((cat (make-llm-catalogue (%backend))))
+  (let* ((cat (make-llm-catalogue (%backend)))
+         (gen (capability-protocol:get-capability cat :llm-generation)))
     (ok (capability-protocol:capability-supported-p cat :llm-embeddings))
     (ok (capability-protocol:capability-supported-p cat :llm-structured-output))
-    (ok (not (capability-protocol:capability-supported-p cat :llm-tools)))))
+    (ok (not (capability-protocol:capability-supported-p cat :llm-tools)))
+    (ok (find 'capability-protocol:stream-complete
+              (capability-protocol:capability-operations gen)
+              :key #'capability-protocol:capability-operation-name))))
 
 (deftest supports-grammar
   (let ((b (%backend)))
     (ok (backend-supports-p b :grammar))
-    (ok (backend-supports-p b :structured-output))))
+    (ok (backend-supports-p b :structured-output))
+    (ok (backend-supports-p b :stream))))
+
+(deftest stream-generate-mock
+  (%with-fake
+    (let* ((seen '())
+           (r (stream-generate (%backend) "hi" :model "local"
+                               :on-part (lambda (p)
+                                          (push (llm-text-part-text p) seen)))))
+      (ok (equal "ok:hi" (llm-response-text r)))
+      (ok (equal "ok:hi" (apply #'concatenate 'string (reverse seen))))
+      (ok (equal "local" (llm-response-model r)))
+      (ok (eq :stop (llm-response-finish-reason r))))))
+
+(deftest stream-generate-raw-grammar
+  (%with-fake
+    (let* ((seen '())
+           (r (stream-generate
+               (%backend) "hi"
+               :settings (llm-backend-llama-cpp:llama-cpp-settings
+                          :grammar "root ::= \"x\""
+                          :grammar-root "root")
+               :on-part (lambda (p)
+                          (push (llm-text-part-text p) seen)))))
+      (ok (equal "ok:hi:root ::= \"x\":root" (llm-response-text r)))
+      (ok (equal "ok:hi:root ::= \"x\":root"
+                 (apply #'concatenate 'string (reverse seen)))))))
 
 (deftest generate-raw-grammar
   (%with-fake
