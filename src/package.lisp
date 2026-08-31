@@ -8,6 +8,8 @@
            #:llama-cpp-engine
            #:ensure-llama-cpp-engine
            #:close-llama-cpp-backend
+           #:llama-cpp-settings
+           #:json-schema-to-gbnf
            #:*complete-fn*
            #:*embed-fn*))
 
