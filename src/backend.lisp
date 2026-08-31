@@ -2,7 +2,8 @@
 
 (defvar *complete-fn* #'llama-cpp:complete
   "Injected for tests. (lambda (engine prompt &key max-tokens temperature
-    grammar grammar-root) → (values text prompt-tokens completion-tokens)).")
+    grammar grammar-root on-token) → (values text prompt-tokens completion-tokens)).
+   ON-TOKEN is (lambda (piece)); non-NIL return stops.")
 
 (defvar *embed-fn* #'llama-cpp:embed
   "Injected for tests. (lambda (engine texts) → (values vectors dim prompt-tokens)).")
@@ -49,7 +50,7 @@
   t)
 
 (defmethod backend-supports-p ((backend llama-cpp-backend) (feature (eql :stream)))
-  nil)
+  t)
 
 (defmethod backend-supports-p ((backend llama-cpp-backend) (feature (eql :tools)))
   nil)
@@ -96,25 +97,48 @@
         (and ts (turn-text (car (last ts))))
         "")))
 
+(defun %invoke-complete (backend turns settings &key on-token)
+  (multiple-value-bind (grammar grammar-root)
+      (%grammar-from-settings settings)
+    (apply *complete-fn* (ensure-llama-cpp-engine backend) (%prompt turns)
+           :max-tokens (or (and settings (llm-settings-max-tokens settings)) 32)
+           :temperature (or (and settings (llm-settings-temperature settings)) 0.0)
+           (append (and on-token (list :on-token on-token))
+                   (and grammar
+                        (list :grammar grammar :grammar-root grammar-root))))))
+
+(defun %make-complete-response (backend model text pt ct parts)
+  (make-llm-response
+   :parts (or parts (list (make-llm-text-part :text (or text ""))))
+   :model (or model (backend-model backend))
+   :finish-reason :stop
+   :usage (make-llm-usage :input-tokens pt :output-tokens ct
+                          :total-tokens (and pt ct (+ pt ct)))))
+
 (defmethod generate ((backend llama-cpp-backend) turns &key model settings tools
                      tool-choice output)
   (declare (ignore tools tool-choice output))
-  (let* ((settings (coerce-settings settings))
-         (engine (ensure-llama-cpp-engine backend)))
-    (multiple-value-bind (grammar grammar-root)
-        (%grammar-from-settings settings)
-      (multiple-value-bind (text pt ct)
-          (apply *complete-fn* engine (%prompt turns)
-                 :max-tokens (or (and settings (llm-settings-max-tokens settings)) 32)
-                 :temperature (or (and settings (llm-settings-temperature settings)) 0.0)
-                 (and grammar
-                      (list :grammar grammar :grammar-root grammar-root)))
-        (make-llm-response
-         :parts (list (make-llm-text-part :text (or text "")))
-         :model (or model (backend-model backend))
-         :finish-reason :stop
-         :usage (make-llm-usage :input-tokens pt :output-tokens ct
-                                :total-tokens (and pt ct (+ pt ct))))))))
+  (let ((settings (coerce-settings settings)))
+    (multiple-value-bind (text pt ct)
+        (%invoke-complete backend turns settings)
+      (%make-complete-response backend model text pt ct nil))))
+
+(defmethod stream-generate ((backend llama-cpp-backend) turns &key model settings
+                            tools tool-choice on-part output)
+  (declare (ignore tools tool-choice output))
+  (let ((settings (coerce-settings settings))
+        (parts '()))
+    (multiple-value-bind (text pt ct)
+        (%invoke-complete backend turns settings
+                          :on-token (lambda (piece)
+                                      (let ((part (make-llm-text-part
+                                                   :text (or piece ""))))
+                                        (push part parts)
+                                        (when on-part
+                                          (funcall on-part part))
+                                        nil)))
+      (%make-complete-response backend model text pt ct
+                               (and parts (nreverse parts))))))
 
 (defmethod list-models ((backend llama-cpp-backend) &key)
   (list (make-llm-model-info

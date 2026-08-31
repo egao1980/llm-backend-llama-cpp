@@ -1,5 +1,5 @@
 (defsystem "llm-backend-llama-cpp"
-  :version "0.1.1"
+  :version "0.1.2"
   :description "llm-protocol backend over llama-cpp (ggml-org/llama.cpp)"
   :author "egao1980"
   :license "MIT"

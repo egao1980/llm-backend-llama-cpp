@@ -2,7 +2,7 @@
 
 [`llm-protocol`](https://github.com/egao1980/llm-protocol) backend over native [`llama-cpp`](https://github.com/egao1980/llama-cpp) (`ggml-org/llama.cpp`). Not HTTP.
 
-`generate` → `llama_stack_complete` / `_ex` (last user text; wave-1 has no tools / stream). `respond` falls back to `generate`. `embed` → `llama_stack_embed` (GGUF families llama.cpp actually loads — `bert`, `qwen3`, …).
+`generate` / `stream-generate` → `llama_stack_complete` / `_ex` / `_stream` (last user text; no tools). `stream-generate` calls `on-part` with each detok `llm-text-part`. `respond` falls back to `generate`. `embed` → `llama_stack_embed` (GGUF families llama.cpp actually loads — `bert`, `qwen3`, …).
 
 Structured output is `:output` (JSON Schema / `schema-protocol` designator) → GBNF. Raw GBNF is backend-local via `extra` or `llama-cpp-settings` — not an `llm-protocol` field.
 
@@ -13,7 +13,7 @@ Structured output is `:output` (JSON Schema / `schema-protocol` designator) → 
                      :grammar "root ::= [a-h] [1-8]"))
 ```
 
-`backend-supports-p` reports `:structured-output` and `:grammar`.
+`backend-supports-p` reports `:structured-output`, `:grammar`, and `:stream`.
 
 ```lisp
 (asdf:load-system "llm-backend-llama-cpp")
