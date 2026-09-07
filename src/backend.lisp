@@ -15,14 +15,17 @@
 (defclass llama-cpp-backend (llm-backend)
   ((model-path :initarg :model-path :accessor llama-cpp-model-path :initform nil)
    (n-ctx :initarg :n-ctx :accessor llama-cpp-n-ctx :initform 2048)
-   (engine :initarg :engine :accessor llama-cpp-engine :initform nil)))
+   (engine :initarg :engine :accessor llama-cpp-engine :initform nil)
+   (chat-template :initarg :chat-template :accessor llama-cpp-chat-template
+                  :initform :auto)))
 
-(defun make-llama-cpp-backend (&key model-path n-ctx engine)
+(defun make-llama-cpp-backend (&key model-path n-ctx engine (chat-template :auto))
   (make-instance 'llama-cpp-backend
                  :model-path (or model-path (%env "LLAMA_MODEL_PATH")
                                  (%env "LLAMA_CPP_MODEL"))
                  :n-ctx (or n-ctx 2048)
-                 :engine engine))
+                 :engine engine
+                 :chat-template chat-template))
 
 (defun use-llama-cpp-backend (&rest args &key &allow-other-keys)
   (setf *llm-backend* (apply #'make-llama-cpp-backend args)))
@@ -135,71 +138,24 @@
                "root"))
       (t (values nil nil)))))
 
-(defun %format-chat-prompt (turns)
-  (with-output-to-string (o)
-    (dolist (turn (coerce-turns turns))
-      (ecase (llm-turn-role turn)
-        (:system
-         (let ((tx (turn-text turn)))
-           (when (plusp (length tx))
-             (format o "system: ~a~%" tx))))
-        (:user (format o "user: ~a~%" (or (turn-text turn) "")))
-        (:assistant
-         (let ((calls (remove-if-not #'llm-tool-call-part-p
-                                     (llm-turn-parts turn))))
-           (if calls
-               (dolist (c calls)
-                 (format o "assistant: {\"name\":~s,\"arguments\":~a}~%"
-                         (llm-tool-call-part-name c)
-                         (or (llm-tool-call-part-arguments c) "{}")))
-               (format o "assistant: ~a~%" (or (turn-text turn) "")))))
-        (:tool
-         (dolist (p (llm-turn-parts turn))
-           (when (llm-tool-result-part-p p)
-             (format o "tool ~a: ~a~%"
-                     (or (llm-tool-result-part-id p) "")
-                     (or (llm-tool-result-part-content p) "")))))))))
+(defun %effective-chat-template (backend settings turns tools)
+  (let* ((extra (and settings (llm-settings-extra settings)))
+         (raw (%extra-get extra :chat-template))
+         (from-extra (if (null raw) :auto (%normalize-chat-template raw)))
+         (explicit (not (eq from-extra :auto)))
+         (from-backend (%normalize-chat-template
+                        (or (llama-cpp-chat-template backend) :auto)))
+         (spec (if explicit from-extra from-backend)))
+    (cond
+      ((eq spec :none) :none)
+      ((and (not explicit) (%lone-user-p turns tools)) :none)
+      ((eq spec :auto) (infer-chat-template (backend-model backend)))
+      (t spec))))
 
-(defun %prompt (turns &optional tools)
-  (if (null tools)
-      (let ((ts (coerce-turns turns)))
-        (if (and ts
-                 (null (rest ts))
-                 (eq (llm-turn-role (first ts)) :user))
-            (or (turn-text (first ts)) "")
-            (%format-chat-prompt ts)))
-      (with-output-to-string (o)
-        (write-line "Available tools. Reply with JSON {\"name\":\"...\",\"arguments\":{...}} to call one, or {\"content\":\"...\"} to answer." o)
-        (dolist (tool tools)
-          (format o "- ~a~@[: ~a~]~%"
-                  (llm-tool-name tool)
-                  (llm-tool-description tool))
-          (when (llm-tool-parameters tool)
-            (format o "  parameters: ~a~%"
-                    (stack-json:encode (llm-tool-parameters tool)))))
-        (terpri o)
-        (dolist (turn (coerce-turns turns))
-          (ecase (llm-turn-role turn)
-            (:system
-             (let ((tx (turn-text turn)))
-               (when (plusp (length tx))
-                 (format o "system: ~a~%" tx))))
-            (:user (format o "user: ~a~%" (or (turn-text turn) "")))
-            (:assistant
-             (let ((calls (remove-if-not #'llm-tool-call-part-p
-                                         (llm-turn-parts turn))))
-               (if calls
-                   (dolist (c calls)
-                     (format o "assistant: {\"name\":~s,\"arguments\":~a}~%"
-                             (llm-tool-call-part-name c)
-                             (or (llm-tool-call-part-arguments c) "{}")))
-                   (format o "assistant: ~a~%" (or (turn-text turn) "")))))
-            (:tool
-             (dolist (p (llm-turn-parts turn))
-               (when (llm-tool-result-part-p p)
-                 (format o "tool ~a: ~a~%"
-                         (or (llm-tool-result-part-id p) "")
-                         (or (llm-tool-result-part-content p) ""))))))))))
+(defun %prompt (backend turns tools settings)
+  (apply-chat-template turns
+                       :template (%effective-chat-template backend settings turns tools)
+                       :tools tools))
 
 (defun %parse-complete-text (text tools)
   (if (null tools)
@@ -229,7 +185,8 @@
 (defun %invoke-complete (backend turns settings &key on-token tools tool-choice)
   (multiple-value-bind (grammar grammar-root)
       (%grammar-from-settings settings tools tool-choice)
-    (apply *complete-fn* (ensure-llama-cpp-engine backend) (%prompt turns tools)
+    (apply *complete-fn* (ensure-llama-cpp-engine backend)
+           (%prompt backend turns tools settings)
            :max-tokens (or (and settings (llm-settings-max-tokens settings)) 32)
            :temperature (or (and settings (llm-settings-temperature settings)) 0.0)
            (append (and on-token (list :on-token on-token))

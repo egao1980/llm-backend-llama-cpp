@@ -358,9 +358,9 @@
           (format o "~a ::= ~a~%" name (gethash name (%gbnf-cx-rules cx))))))))
 
 (defun llama-cpp-settings (&key temperature max-tokens stop top-p response-format
-                            output extra grammar grammar-root)
-  "LLM-SETTINGS with GBNF stashed in EXTRA. Do not subclass LLM-SETTINGS —
-   COPY-LLM-SETTINGS rebuilds a plain instance."
+                            output extra grammar grammar-root chat-template)
+  "LLM-SETTINGS with GBNF / chat-template stashed in EXTRA. Do not subclass
+   LLM-SETTINGS — COPY-LLM-SETTINGS rebuilds a plain instance."
   (make-llm-settings
    :temperature temperature :max-tokens max-tokens :stop stop :top-p top-p
    :response-format response-format :output output
@@ -370,4 +370,5 @@
                     (t (error 'llm-error
                               :message "llama-cpp-settings :extra must be a plist")))
                   (and grammar (list :grammar grammar))
-                  (and grammar-root (list :grammar-root grammar-root)))))
+                  (and grammar-root (list :grammar-root grammar-root))
+                  (and chat-template (list :chat-template chat-template)))))
