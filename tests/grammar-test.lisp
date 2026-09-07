@@ -58,8 +58,10 @@
             :temperature 0.2
             :grammar "root ::= \"x\""
             :grammar-root "root"
+            :chat-template :chatml
             :extra '(:foo 1))))
     (ok (= 0.2 (llm-settings-temperature s)))
     (ok (equal "root ::= \"x\"" (getf (llm-settings-extra s) :grammar)))
     (ok (equal "root" (getf (llm-settings-extra s) :grammar-root)))
+    (ok (eq :chatml (getf (llm-settings-extra s) :chat-template)))
     (ok (eql 1 (getf (llm-settings-extra s) :foo)))))

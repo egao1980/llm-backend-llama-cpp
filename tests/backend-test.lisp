@@ -48,6 +48,53 @@
       (ok (search "system: Always cite." (llm-response-text r)))
       (ok (search "user: hi" (llm-response-text r))))))
 
+(deftest generate-chatml-settings
+  (%with-fake
+    (let ((r (generate (%backend)
+                       (list (system-turn "Always cite.")
+                             (user-turn "hi"))
+                       :settings (llm-backend-llama-cpp:llama-cpp-settings
+                                  :chat-template :chatml))))
+      (ok (search "<|im_start|>system" (llm-response-text r)))
+      (ok (search "Always cite." (llm-response-text r)))
+      (ok (search "<|im_start|>user" (llm-response-text r))))))
+
+(deftest generate-lone-user-stays-raw
+  (%with-fake
+    (let ((r (generate (%backend) "hi"
+                       :settings (llm-backend-llama-cpp:llama-cpp-settings
+                                  :chat-template :auto))))
+      (ok (equal "ok:hi" (llm-response-text r))))))
+
+(deftest generate-explicit-chatml-wraps-lone-user
+  (%with-fake
+    (let ((r (generate (%backend) "hi"
+                       :settings (llm-backend-llama-cpp:llama-cpp-settings
+                                  :chat-template :chatml))))
+      (ok (search "<|im_start|>user" (llm-response-text r)))
+      (ok (search "hi<|im_end|>" (llm-response-text r))))))
+
+(deftest generate-infers-qwen-chatml
+  (%with-fake
+    (let* ((b (llm-backend-llama-cpp:make-llama-cpp-backend
+               :model-path "/models/Qwen3.5-2B-Q4_K_M.gguf"
+               :engine :fake))
+           (r (generate b (list (system-turn "Be brief.")
+                                (user-turn "hi")))))
+      (ok (search "<|im_start|>system" (llm-response-text r)))
+      (ok (search "<|im_start|>assistant" (llm-response-text r))))))
+
+(deftest generate-infers-llama3
+  (%with-fake
+    (let* ((b (llm-backend-llama-cpp:make-llama-cpp-backend
+               :model-path "/models/Meta-Llama-3.1-8B-Instruct.gguf"
+               :engine :fake))
+           (r (generate b (list (system-turn "Be brief.")
+                                (user-turn "hi")))))
+      (ok (search "<|start_header_id|>system<|end_header_id|>"
+                  (llm-response-text r)))
+      (ng (search "<|begin_of_text|>" (llm-response-text r))))))
+
 (deftest list-models
   (let ((models (list-models (%backend))))
     (ok (equal "/models/fake" (llm-model-info-id (first models))))
