@@ -75,7 +75,7 @@
          (gen (capability-protocol:get-capability cat :llm-generation)))
     (ok (capability-protocol:capability-supported-p cat :llm-embeddings))
     (ok (capability-protocol:capability-supported-p cat :llm-structured-output))
-    (ok (capability-protocol:capability-supported-p cat :llm-tools)))
+    (ok (capability-protocol:capability-supported-p cat :llm-tools))
     (ok (find 'capability-protocol:stream-complete
               (capability-protocol:capability-operations gen)
               :key #'capability-protocol:capability-operation-name))))
