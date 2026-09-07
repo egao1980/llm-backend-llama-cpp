@@ -135,14 +135,39 @@
                "root"))
       (t (values nil nil)))))
 
+(defun %format-chat-prompt (turns)
+  (with-output-to-string (o)
+    (dolist (turn (coerce-turns turns))
+      (ecase (llm-turn-role turn)
+        (:system
+         (let ((tx (turn-text turn)))
+           (when (plusp (length tx))
+             (format o "system: ~a~%" tx))))
+        (:user (format o "user: ~a~%" (or (turn-text turn) "")))
+        (:assistant
+         (let ((calls (remove-if-not #'llm-tool-call-part-p
+                                     (llm-turn-parts turn))))
+           (if calls
+               (dolist (c calls)
+                 (format o "assistant: {\"name\":~s,\"arguments\":~a}~%"
+                         (llm-tool-call-part-name c)
+                         (or (llm-tool-call-part-arguments c) "{}")))
+               (format o "assistant: ~a~%" (or (turn-text turn) "")))))
+        (:tool
+         (dolist (p (llm-turn-parts turn))
+           (when (llm-tool-result-part-p p)
+             (format o "tool ~a: ~a~%"
+                     (or (llm-tool-result-part-id p) "")
+                     (or (llm-tool-result-part-content p) "")))))))))
+
 (defun %prompt (turns &optional tools)
   (if (null tools)
       (let ((ts (coerce-turns turns)))
-        (or (loop for turn in (reverse ts)
-                  when (eq (llm-turn-role turn) :user)
-                    return (turn-text turn))
-            (and ts (turn-text (car (last ts))))
-            ""))
+        (if (and ts
+                 (null (rest ts))
+                 (eq (llm-turn-role (first ts)) :user))
+            (or (turn-text (first ts)) "")
+            (%format-chat-prompt ts)))
       (with-output-to-string (o)
         (write-line "Available tools. Reply with JSON {\"name\":\"...\",\"arguments\":{...}} to call one, or {\"content\":\"...\"} to answer." o)
         (dolist (tool tools)

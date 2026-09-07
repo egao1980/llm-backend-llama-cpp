@@ -40,6 +40,14 @@
       (ok (eq :stop (llm-response-finish-reason r)))
       (ok (= 5 (llm-usage-total-tokens (llm-response-usage r)))))))
 
+(deftest generate-keeps-system-turn
+  (%with-fake
+    (let ((r (generate (%backend)
+                       (list (system-turn "Always cite.")
+                             (user-turn "hi")))))
+      (ok (search "system: Always cite." (llm-response-text r)))
+      (ok (search "user: hi" (llm-response-text r))))))
+
 (deftest list-models
   (let ((models (list-models (%backend))))
     (ok (equal "/models/fake" (llm-model-info-id (first models))))
