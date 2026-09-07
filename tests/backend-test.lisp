@@ -3,7 +3,9 @@
 (defun %fake-complete (engine prompt &key max-tokens temperature grammar grammar-root
                        on-token)
   (declare (ignore engine max-tokens temperature))
-  (let ((text (format nil "ok:~a~@[:~a~]~@[:~a~]" prompt grammar grammar-root)))
+  (let ((text (if (search "Available tools" prompt)
+                  "{\"name\":\"sum\",\"arguments\":{\"a\":1}}"
+                  (format nil "ok:~a~@[:~a~]~@[:~a~]" prompt grammar grammar-root))))
     (when on-token
       (loop for i from 0 below (length text)
             until (funcall on-token (string (char text i)))))
@@ -73,7 +75,7 @@
          (gen (capability-protocol:get-capability cat :llm-generation)))
     (ok (capability-protocol:capability-supported-p cat :llm-embeddings))
     (ok (capability-protocol:capability-supported-p cat :llm-structured-output))
-    (ok (not (capability-protocol:capability-supported-p cat :llm-tools)))
+    (ok (capability-protocol:capability-supported-p cat :llm-tools)))
     (ok (find 'capability-protocol:stream-complete
               (capability-protocol:capability-operations gen)
               :key #'capability-protocol:capability-operation-name))))
@@ -82,7 +84,8 @@
   (let ((b (%backend)))
     (ok (backend-supports-p b :grammar))
     (ok (backend-supports-p b :structured-output))
-    (ok (backend-supports-p b :stream))))
+    (ok (backend-supports-p b :stream))
+    (ok (backend-supports-p b :tools))))
 
 (deftest stream-generate-mock
   (%with-fake
@@ -134,3 +137,54 @@
                        :settings (llm-backend-llama-cpp:llama-cpp-settings
                                   :grammar "root ::= \"z\""))))
       (ok (equal "ok:x:root ::= \"z\":root" (llm-response-text r))))))
+
+(deftest generate-tools-mock
+  (%with-fake
+    (let ((r (generate (%backend) "add"
+                       :tools (list (make-llm-tool :name "sum")))))
+      (ok (eq :tool-use (llm-response-finish-reason r)))
+      (ok (equal "sum" (llm-tool-call-part-name
+                        (first (llm-response-tool-calls r)))))
+      (ok (search "\"a\":1" (llm-tool-call-part-arguments
+                             (first (llm-response-tool-calls r))))))))
+
+(deftest tools-inject-gbnf-and-prompt
+  (let ((seen-prompt nil)
+        (seen-grammar nil))
+    (%with-fake
+      (let ((llm-backend-llama-cpp:*complete-fn*
+              (lambda (engine prompt &key grammar &allow-other-keys)
+                (declare (ignore engine))
+                (setf seen-prompt prompt
+                      seen-grammar grammar)
+                (values "{\"name\":\"sum\",\"arguments\":{}}" 1 1))))
+        (generate (%backend) "add"
+                  :tools (list (make-llm-tool :name "sum"
+                                              :description "add numbers")))
+        (ok (search "Available tools" seen-prompt))
+        (ok (search "sum" seen-prompt))
+        (ok (search "user: add" seen-prompt))
+        (ok (search "name" seen-grammar))
+        (ok (search "sum" seen-grammar))))))
+
+(deftest extra-grammar-wins-over-tools
+  (let ((seen-grammar nil))
+    (%with-fake
+      (let ((llm-backend-llama-cpp:*complete-fn*
+              (lambda (engine prompt &key grammar &allow-other-keys)
+                (declare (ignore engine prompt))
+                (setf seen-grammar grammar)
+                (values "z" 1 1))))
+        (generate (%backend) "x"
+                  :tools (list (make-llm-tool :name "sum"))
+                  :settings (llm-backend-llama-cpp:llama-cpp-settings
+                             :grammar "root ::= \"z\""))
+        (ok (equal "root ::= \"z\"" seen-grammar))))))
+
+(deftest stream-generate-tools
+  (%with-fake
+    (let ((r (stream-generate (%backend) "add"
+                              :tools (list (make-llm-tool :name "sum")))))
+      (ok (eq :tool-use (llm-response-finish-reason r)))
+      (ok (equal "sum" (llm-tool-call-part-name
+                        (first (llm-response-tool-calls r))))))))

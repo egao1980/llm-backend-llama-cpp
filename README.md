@@ -2,7 +2,7 @@
 
 [`llm-protocol`](https://github.com/egao1980/llm-protocol) backend over native [`llama-cpp`](https://github.com/egao1980/llama-cpp) (`ggml-org/llama.cpp`). Not HTTP.
 
-`generate` / `stream-generate` → `llama_stack_complete` / `_ex` / `_stream` (last user text; no tools). `stream-generate` calls `on-part` with each detok `llm-text-part`. `respond` falls back to `generate`. `embed` → `llama_stack_embed` (GGUF families llama.cpp actually loads — `bert`, `qwen3`, …).
+`generate` / `stream-generate` → `llama_stack_complete` / `_ex` / `_stream`. No-tools prompt is last user text. With `:tools`, the prompt dumps the conversation plus a tool list and GBNF-constrains `{name,arguments}` / `{content}` (llama.cpp ABI has no tool API). Extra `:grammar` still wins over `:output` and over tools. `stream-generate` calls `on-part` with each detok `llm-text-part` (and the parsed tool call at the end). `respond` falls back to `generate`. `embed` → `llama_stack_embed` (GGUF families llama.cpp actually loads — `bert`, `qwen3`, …).
 
 Structured output is `:output` (JSON Schema / `schema-protocol` designator) → GBNF. Raw GBNF is backend-local via `extra` or `llama-cpp-settings` — not an `llm-protocol` field.
 
@@ -13,7 +13,7 @@ Structured output is `:output` (JSON Schema / `schema-protocol` designator) → 
                      :grammar "root ::= [a-h] [1-8]"))
 ```
 
-`backend-supports-p` reports `:structured-output`, `:grammar`, and `:stream`.
+`backend-supports-p` reports `:structured-output`, `:grammar`, `:stream`, and `:tools`.
 
 ```lisp
 (asdf:load-system "llm-backend-llama-cpp")
