@@ -127,7 +127,7 @@
                   (%template-role (llm-turn-role turn))
                   tx))))
     (when add-generation-prompt
-      (write-string "<|im_start|>assistant~%" o))))
+      (format o "<|im_start|>assistant~%"))))
 
 (defun %format-llama3-prompt (turns add-generation-prompt)
   (with-output-to-string (o)

@@ -19,7 +19,9 @@
     (ok (search "Always cite.<|im_end|>" s))
     (ok (search "<|im_start|>user" s))
     (ok (search "hi<|im_end|>" s))
-    (ok (search "<|im_start|>assistant" s))))
+    (ok (search "<|im_start|>assistant" s))
+    (ok (char= #\Newline (char s (1- (length s)))))
+    (ng (search "~%" s))))
 
 (deftest apply-llama3
   (let ((s (llm-backend-llama-cpp:apply-chat-template
