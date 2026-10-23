@@ -14,12 +14,35 @@ on:
         default: "latest"
         type: string
 
+# Composed (not thin publish-source.yml). Publish installs llama-cpp before
+# any pre-publish hook, so scripts/ci/pre-install.lisp does not run.
+# chipz:decompress of the 1.7GB linux/amd64 layer then requests a 4GB output
+# vector: 4096 and 8192 both heap-exhaust. 12288 finishes that gunzip;
+# 16384 leaves room for the client image already in the process.
 jobs:
   publish:
-    uses: egao1980/cl-repository/.github/workflows/publish-source.yml@main
-    with:
-      version: ${{ inputs.version }}
-      packager-version: ${{ inputs.packager_version }}
+    runs-on: ubuntu-latest
+    container: ghcr.io/egao1980/cl-repository/ci-base:latest
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
       packages: write
+    env:
+      SBCL_VERSION: "2.6.7"
+      ROSWELL_VERSION: "26.02.116"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: egao1980/cl-repository/.github/actions/setup-lisp@main
+        with:
+          sbcl-version: ${{ env.SBCL_VERSION }}
+          roswell-version: ${{ env.ROSWELL_VERSION }}
+
+      - uses: egao1980/cl-repository/.github/actions/ci@main
+        with:
+          phase: publish
+          version: ${{ inputs.version }}
+          packager-version: ${{ inputs.packager_version }}
+          sbcl-dynamic-space-mb: "16384"
