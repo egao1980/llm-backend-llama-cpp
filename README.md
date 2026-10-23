@@ -1,6 +1,6 @@
 # llm-backend-llama-cpp
 
-[`llm-protocol`](https://github.com/egao1980/llm-protocol) backend over native [`llama-cpp`](https://github.com/egao1980/llama-cpp) (`ggml-org/llama.cpp`). Not HTTP.
+[`llm-protocol`](https://github.com/egao1980/llm-protocol) backend over native [`llama-cpp`](https://github.com/egao1980/llama-cpp) 0.1.6 (`ggml-org/llama.cpp`). Not HTTP.
 
 `generate` / `stream-generate` → `llama_stack_complete` / `_ex` / `_stream`. A lone user turn is still raw text (`generate b "hi"`). Chat turns (`:system`, multi-turn, `:tools`) go through `apply-chat-template`. Extra / slot `:chat-template` is `:auto` (default) | `:none` | `:plain` | `:chatml` | `:llama3`. `:auto` infers from the GGUF path (`qwen` → ChatML, `llama3` → Llama-3 headers) and falls back to `system:` / `user:` / `assistant:` (`:plain`). Raw GGUF Jinja is not parsed — that needs llama-stack ABI 5. Explicit `:chatml` wraps a lone user turn; `:none` never does. With `:tools`, the tool list is merged into the system turn and GBNF-constrains `{name,arguments}` / `{content}` (llama.cpp ABI has no tool API). Extra `:grammar` still wins over `:output` and over tools. `stream-generate` calls `on-part` with each detok `llm-text-part` (and the parsed tool call at the end). `respond` falls back to `generate`. `embed` → `llama_stack_embed` (GGUF families llama.cpp actually loads — `bert`, `qwen3`, …).
 
