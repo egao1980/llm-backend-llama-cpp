@@ -1,9 +1,12 @@
 (defsystem "llm-backend-llama-cpp"
-  :version "0.1.4"
+  :version "0.1.5"
   :description "llm-protocol backend over llama-cpp (ggml-org/llama.cpp)"
   :author "egao1980"
   :license "MIT"
-  :depends-on ("llm-protocol" "llama-cpp" "json-protocol" "json-backend-jzon")
+  :depends-on ("llm-protocol"
+               (:version "llama-cpp" "0.1.6")
+               "json-protocol"
+               "json-backend-jzon")
   :properties
   (:cl-repo
    (:ci (:with ("capability-protocol"))))
